@@ -1,27 +1,38 @@
 steps:
-# Step 1: MongoDB Setup
+# Step 1: Check, delete if exists, and recreate MongoDB VM
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: 'create-mongodb-vm'
+  id: 'manage-mongodb-vm'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
+    set -e
+    if gcloud compute instances describe mongodb-vm --zone=${_ZONE} &>/dev/null; then
+      echo "MongoDB VM exists. Deleting..."
+      gcloud compute instances delete mongodb-vm --zone=${_ZONE} --quiet
+      echo "Waiting for VM deletion..."
+      while gcloud compute instances describe mongodb-vm --zone=${_ZONE} &>/dev/null; do
+        sleep 5
+      done
+    else
+      echo "MongoDB VM does not exist."
+    fi
+    echo "Creating MongoDB VM..."
     gcloud compute instances create mongodb-vm \
     --image-family ubuntu-2004-lts \
     --image-project ubuntu-os-cloud \
     --machine-type ${_MACHINE_TYPE} \
     --zone ${_ZONE}
 
-# Step 2: Install MongoDB
+# Step 2: Install MongoDB 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'install-mongodb'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    set -e  # Exit immediately if a command exits with a non-zero status
-    set -x  # Print commands and their arguments as they are executed
-
+    set -e
+    set -x
     gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
     sudo mkdir -p /var/lib/apt/lists/partial
     sudo apt-get clean
@@ -36,7 +47,7 @@ steps:
     sudo systemctl status mongod
     "
 
-# Step 3: Setup MongoDB Auth
+# Step 3: Setup MongoDB Auth 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'setup-mongodb-auth'
   entrypoint: 'bash'
@@ -50,19 +61,97 @@ steps:
     sudo systemctl restart mongod
     "
 
-# Step 4: Create Backup Bucket
+# Step 4: Check, delete if exists, and recreate Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
-  id: 'create-backup-bucket'
-  args: ['mb', '-p', '${PROJECT_ID}', 'gs://${_BACKUP_BUCKET}']
-
-# Step 5: GKE Setup
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: 'create-gke-cluster'
+  id: 'manage-backup-bucket'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
     set -e
+    if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
+      echo "Backup bucket exists. Deleting..."
+      gsutil rm -r gs://${_BACKUP_BUCKET}
+    else
+      echo "Backup bucket does not exist."
+    fi
+    echo "Creating backup bucket..."
+    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
+
+# Step 5: Create MongoDB backup script
+- name: 'ubuntu'
+  id: 'create-mongodb-backup-script'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    cat > mongodb_backup.sh << EOL
+    #!/bin/bash
+
+    # MongoDB connection details
+    MONGO_HOST="localhost"
+    MONGO_PORT="27017"
+    MONGO_USER="admin"
+    MONGO_PASS="\$MONGODB_PASSWORD"
+
+    # Backup details
+    BACKUP_DIR="/tmp/mongodb_backup"
+    TIMESTAMP=\$(date +"%Y%m%d_%H%M%S")
+    BACKUP_FILENAME="mongodb_backup_\$TIMESTAMP.gz"
+
+    # GCS bucket details
+    GCS_BUCKET="${_BACKUP_BUCKET}"
+
+    # Create backup
+    mongodump --host \$MONGO_HOST --port \$MONGO_PORT --username \$MONGO_USER --password \$MONGO_PASS --out \$BACKUP_DIR
+
+    # Compress backup
+    tar -zcvf \$BACKUP_FILENAME -C \$BACKUP_DIR .
+
+    # Upload to GCS bucket
+    gsutil cp \$BACKUP_FILENAME gs://\$GCS_BUCKET/
+
+    # Clean up
+    rm -rf \$BACKUP_DIR
+    rm \$BACKUP_FILENAME
+
+    echo "Backup completed and uploaded to gs://\$GCS_BUCKET/\$BACKUP_FILENAME"
+    EOL
+    
+# Step 6: Set up MongoDB backup script
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'setup-mongodb-backup'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute scp mongodb_backup.sh mongodb-vm:/home/mongodb_user/mongodb_backup.sh --zone=${_ZONE}
+    
+    gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
+      sudo mv /home/mongodb_user/mongodb_backup.sh /usr/local/bin/mongodb_backup.sh && \
+      sudo chmod +x /usr/local/bin/mongodb_backup.sh && \
+      echo '0 2 * * * /usr/local/bin/mongodb_backup.sh' | sudo tee -a /etc/crontab
+    "
+
+# Step 7: Check, delete if exists, and recreate GKE Cluster
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'manage-gke-cluster'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    if gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} &>/dev/null; then
+      echo "GKE cluster exists. Deleting..."
+      gcloud container clusters delete ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} --quiet
+      echo "Waiting for cluster deletion..."
+      while gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} &>/dev/null; do
+        sleep 5
+      done
+    else
+      echo "GKE cluster does not exist."
+    fi
+    echo "Creating GKE cluster..."
     gcloud container clusters create ${_CLUSTER_NAME} \
       --num-nodes=${_NODE_COUNT} \
       --zone=${_ZONE} \
@@ -73,20 +162,43 @@ steps:
       --zone=${_ZONE} \
       --project=${PROJECT_ID}
 
-# Step 6: Clone Tasky repository
+# Step 8: Clone Tasky repository
 - name: 'gcr.io/cloud-builders/git'
   id: 'clone-tasky-repo'
   args: ['clone', 'https://github.com/jeffthorne/tasky.git']
 
-# Step 7: Build and push Docker image
+# Step 7: Create wizexercise.txt
+- name: 'ubuntu'
+  id: 'create-wizexercise-file'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "WIZ.IO IS AWESOME" > wizexercise.txt
+
+# Step 9: Build Docker image
 - name: 'gcr.io/cloud-builders/docker'
-  id: 'build-push-image'
+  id: 'build-image'
   args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', './tasky']
+
+# Step 10: Inject wizexercise.txt into the container
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'inject-wizexercise-file'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    container_id=$(docker create gcr.io/${PROJECT_ID}/tasky-app:v1)
+    docker cp wizexercise.txt $container_id:/wizexercise.txt
+    docker commit $container_id gcr.io/${PROJECT_ID}/tasky-app:v1
+    docker rm $container_id
+    
+# Step 11: Push Docker image
 - name: 'gcr.io/cloud-builders/docker'
   id: 'push-image'
   args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
-# Step 8: Create Kubernetes secrets
+# Step 12: Create Kubernetes secrets
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'create-secrets'
   entrypoint: 'bash'
@@ -101,7 +213,7 @@ steps:
       --from-literal=SECRET_KEY="$${SECRET_KEY}" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-# Step 9 Apply Kubernetes configuration
+# Step 13: Apply Kubernetes configuration
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-config'
   entrypoint: 'bash'
