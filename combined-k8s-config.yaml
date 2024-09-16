@@ -102,13 +102,18 @@ spec:
       - name: tasky
         image: gcr.io/${PROJECT_ID}/tasky-app:v1
         ports:
-        - containerPort: 3000
+        - containerPort: 8080
         env:
         - name: MONGODB_URI
           valueFrom:
             secretKeyRef:
-              name: mongodb-secret
-              key: uri
+              name: tasky-secrets
+              key: MONGODB_URI
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tasky-secrets
+              key: SECRET_KEY
         resources:
           requests:
             cpu: 100m
@@ -127,7 +132,7 @@ spec:
     app: tasky
   ports:
   - port: 80
-    targetPort: 3000
+    targetPort: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
