@@ -14,6 +14,8 @@ steps:
       while gcloud compute instances describe mongodb-vm --zone=${_ZONE} &>/dev/null; do
         sleep 5
       done
+    else
+      echo "MongoDB VM does not exist."
     fi
     echo "Creating MongoDB VM..."
     gcloud compute instances create mongodb-vm \
@@ -70,6 +72,8 @@ steps:
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Deleting..."
       gsutil rm -r gs://${_BACKUP_BUCKET}
+    else
+      echo "Backup bucket does not exist."
     fi
     echo "Creating backup bucket..."
     gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
@@ -89,6 +93,8 @@ steps:
       while gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} &>/dev/null; do
         sleep 5
       done
+    else
+      echo "GKE cluster does not exist."
     fi
     echo "Creating GKE cluster..."
     gcloud container clusters create ${_CLUSTER_NAME} \
