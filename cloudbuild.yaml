@@ -73,9 +73,29 @@ steps:
       --zone=${_ZONE} \
       --project=${PROJECT_ID}
 
-# Step 6: Traefik Setup
+# Step 6: Build and push Docker image
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-image'
+  args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-image'
+  args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
+
+# Step 7: Create Kubernetes secret
 - name: 'gcr.io/cloud-builders/kubectl'
-  id: 'traefik-setup'
+  id: 'create-secret'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
+    kubectl create secret generic mongodb-secret \
+      --from-literal=uri="mongodb://admin:$${MONGODB_PASSWORD}@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)'):27017/admin" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+# Step 8: Apply combined Kubernetes configuration
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'apply-k8s-config'
   entrypoint: 'bash'
   args:
   - '-c'
@@ -90,50 +110,18 @@ steps:
     kubectl cluster-info
     echo "Current Kubernetes context:"
     kubectl config current-context
-    echo "All Kubernetes contexts:"
-    kubectl config get-contexts
-    echo "Applying Traefik configuration:"
-    kubectl apply -f traefik-config.yaml
-    echo "Verifying Traefik deployment:"
-    kubectl get deployments -n kube-system
-    kubectl get services -n kube-system
-
-# Step 7: Build and push Docker image
-- name: 'gcr.io/cloud-builders/docker'
-  id: 'build-image'
-  args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', '.']
-- name: 'gcr.io/cloud-builders/docker'
-  id: 'push-image'
-  args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
-
-# Step 8: Create Kubernetes secret
-- name: 'gcr.io/cloud-builders/kubectl'
-  id: 'create-secret'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
-    kubectl create secret generic mongodb-secret \
-      --from-literal=uri="mongodb://admin:$${MONGODB_PASSWORD}@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)'):27017/admin" \
-      --dry-run=client -o yaml | kubectl apply -f -
-
-# Step 9: Apply Kubernetes Deployment
-- name: 'gcr.io/cloud-builders/kubectl'
-  id: 'apply-k8s-deployment'
-  args:
-  - 'apply'
-  - '-f'
-  - 'k8s-deployment.yaml'
+    echo "Applying combined Kubernetes configuration:"
+    kubectl apply -f combined-k8s-config.yaml
+    echo "Verifying deployments:"
+    kubectl get deployments --all-namespaces
+    kubectl get services --all-namespaces
+    kubectl get ingress --all-namespaces
 
 substitutions:
   _ZONE: us-central1-a
   _CLUSTER_NAME: tasky-cluster
   _NODE_COUNT: "3"
   _MACHINE_TYPE: e2-medium
-  _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
 
 options:
   logging: CLOUD_LOGGING_ONLY
-
-timeout: 3600s
