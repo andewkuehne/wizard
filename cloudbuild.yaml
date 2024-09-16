@@ -6,16 +6,18 @@ steps:
   args:
   - '-c'
   - |
-    gcloud builds submit --config=mongodb-setup.yaml
+    gcloud builds submit --config=mongodb-setup.yaml \
+    --substitutions=_ZONE=${_ZONE},_MACHINE_TYPE=${_MACHINE_TYPE},_BACKUP_BUCKET=${_BACKUP_BUCKET}
 
-# Step 2: GKE Setup
+# GKE Setup
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'gke-setup'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    gcloud builds submit --config=gke-setup.yaml
+    gcloud builds submit --config=gke-setup.yaml \
+    --substitutions=_ZONE=${_ZONE},_CLUSTER_NAME=${_CLUSTER_NAME},_NODE_COUNT=${_NODE_COUNT}
 
 # Step 3: Get GKE credentials
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -28,12 +30,12 @@ steps:
   - '--zone=${_ZONE}'
   - '--project=${PROJECT_ID}'
 
-# STraefik Setup
+# Step 4: Traefik Setup
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'traefik-setup'
   args: ['apply', '-f', 'traefik-config.yml']
 
-# Step 4: Build and push Docker image
+# Step 5: Build and push Docker image
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
   args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', '.']
@@ -41,7 +43,7 @@ steps:
   id: 'push-image'
   args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
-# Step 5: Create Kubernetes secret
+# Step 6: Create Kubernetes secret
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'create-secret'
   entrypoint: 'bash'
@@ -53,7 +55,7 @@ steps:
       --dry-run=client -o yaml | kubectl apply -f -
   secretEnv: ['MONGODB_PASSWORD']
 
-# Apply Kubernetes Deployment
+# Step 7: Apply Kubernetes Deployment
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-deployment'
   args:
@@ -64,6 +66,9 @@ steps:
 substitutions:
   _ZONE: us-central1-a
   _CLUSTER_NAME: tasky-cluster
+  _NODE_COUNT: "3"
+  _MACHINE_TYPE: e2-medium
+  _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
 
 availableSecrets:
   secretManager:
