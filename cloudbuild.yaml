@@ -80,8 +80,23 @@ steps:
   args:
   - '-c'
   - |
-    kubectl config view
+    set -e
+    set -x
+    echo "Current working directory:"
+    pwd
+    echo "Contents of current directory:"
+    ls -la
+    echo "Kubernetes cluster info:"
+    kubectl cluster-info
+    echo "Current Kubernetes context:"
+    kubectl config current-context
+    echo "All Kubernetes contexts:"
+    kubectl config get-contexts
+    echo "Applying Traefik configuration:"
     kubectl apply -f traefik-config.yaml
+    echo "Verifying Traefik deployment:"
+    kubectl get deployments -n kube-system
+    kubectl get services -n kube-system
 
 # Step 7: Build and push Docker image
 - name: 'gcr.io/cloud-builders/docker'
