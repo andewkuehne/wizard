@@ -78,73 +78,48 @@ steps:
     echo "Creating backup bucket..."
     gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
 
-# Step 5: Create MongoDB backup script
-- name: 'ubuntu'
-  id: 'create-mongodb-backup-script'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    cat > mongodb_backup.sh << 'EOL'
-    #!/bin/bash
-
-    # MongoDB connection details
-    MONGO_HOST="localhost"
-    MONGO_PORT="27017"
-    MONGO_USER="admin"
-    MONGO_PASS="$(gcloud secrets versions access latest --secret=mongodb-password)"
-
-    # Backup details
-    BACKUP_DIR="/tmp/mongodb_backup"
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    BACKUP_FILENAME="mongodb_backup_${TIMESTAMP}.gz"
-
-    # GCS bucket details
-    GCS_BUCKET="${_BACKUP_BUCKET}"
-
-    # Create backup
-    mongodump --host $MONGO_HOST --port $MONGO_PORT --username $MONGO_USER --password $MONGO_PASS --out $BACKUP_DIR
-
-    # Compress backup
-    tar -zcvf $BACKUP_FILENAME -C $BACKUP_DIR .
-
-    # Upload to GCS bucket
-    gsutil cp $BACKUP_FILENAME gs://$GCS_BUCKET/
-
-    # Clean up
-    rm -rf $BACKUP_DIR
-    rm $BACKUP_FILENAME
-
-    echo "Backup completed and uploaded to gs://$GCS_BUCKET/$BACKUP_FILENAME"
-    EOL
-
-    # Replace _BACKUP_BUCKET placeholder with actual value
-    sed -i 's/${_BACKUP_BUCKET}/'${_BACKUP_BUCKET}'/g' mongodb_backup.sh
-    
-# Step 6: Set up MongoDB backup script
+# Step 5: Create MongoDB backup service
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'setup-mongodb-backup'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    # Copy the backup script to the MongoDB VM
-    gcloud compute scp mongodb_backup.sh mongodb-vm:/home/mongodb_user/mongodb_backup.sh --zone=${_ZONE}
+    # Replace placeholder with actual backup bucket name
+    sed -i 's/PLACEHOLDER_BACKUP_BUCKET/${_BACKUP_BUCKET}/g' mongodb_backup.sh
     
-    # Set up the backup script on the MongoDB VM
+    # Create a systemd service file
+    cat > mongodb_backup.service << EOL
+    [Unit]
+    Description=MongoDB Backup Service
+    
+    [Service]
+    Type=oneshot
+    ExecStart=/bin/bash -c '/usr/local/bin/mongodb_backup.sh "$(cat /etc/mongodb_backup_password)"'
+    
+    [Install]
+    WantedBy=multi-user.target
+    EOL
+    
+    # Copy files to the MongoDB VM
+    gcloud compute scp mongodb_backup.sh mongodb_backup.service mongodb-vm:/home/mongodb_user/ --zone=${_ZONE}
+    
+    # Fetch MongoDB password from Secret Manager
+    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
+    
+    # Set up the backup script and service on the MongoDB VM
     gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
       sudo mv /home/mongodb_user/mongodb_backup.sh /usr/local/bin/mongodb_backup.sh && \
       sudo chmod +x /usr/local/bin/mongodb_backup.sh && \
-      echo '0 2 * * * /usr/local/bin/mongodb_backup.sh' | sudo tee -a /etc/crontab
+      sudo mv /home/mongodb_user/mongodb_backup.service /etc/systemd/system/mongodb_backup.service && \
+      echo '$MONGODB_PASSWORD' | sudo tee /etc/mongodb_backup_password > /dev/null && \
+      sudo chmod 600 /etc/mongodb_backup_password && \
+      sudo systemctl daemon-reload && \
+      sudo systemctl enable mongodb_backup.service && \
+      echo '0 2 * * * root systemctl start mongodb_backup.service' | sudo tee -a /etc/crontab
     "
-    
-    # Grant the MongoDB VM's service account access to the Secret Manager secret
-    PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
-    gcloud secrets add-iam-policy-binding mongodb-password \
-      --member=serviceAccount:$${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
-      --role=roles/secretmanager.secretAccessor
 
-# Step 7: Check, delete if exists, and recreate GKE Cluster
+# Step 6: Check, delete if exists, and recreate GKE Cluster
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'manage-gke-cluster'
   entrypoint: 'bash'
@@ -173,12 +148,12 @@ steps:
       --zone=${_ZONE} \
       --project=${PROJECT_ID}
 
-# Step 8: Clone Tasky repository
+# Step 7: Clone Tasky repository
 - name: 'gcr.io/cloud-builders/git'
   id: 'clone-tasky-repo'
   args: ['clone', 'https://github.com/jeffthorne/tasky.git']
 
-# Step 7: Create wizexercise.txt
+# Step 8: Create wizexercise.txt
 - name: 'ubuntu'
   id: 'create-wizexercise-file'
   entrypoint: 'bash'
