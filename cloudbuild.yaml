@@ -1,0 +1,43 @@
+steps:
+# Step 1: Set up MongoDB VM
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'setup-mongodb'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud builds submit --config=mongodb-setup.yaml \
+      --substitutions=_PROJECT_ID=${_PROJECT_ID},_ZONE=${_ZONE},_MACHINE_TYPE=${_MACHINE_TYPE} \
+      || (echo "MongoDB setup failed"; exit 1)
+
+# Step 2: Set up GKE cluster
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'setup-gke'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud builds submit --config=gke-setup.yaml \
+      --substitutions=_PROJECT_ID=${_PROJECT_ID},_ZONE=${_ZONE},_CLUSTER_NAME=${_CLUSTER_NAME},_NODE_COUNT=${_NODE_COUNT} \
+      || (echo "GKE setup failed"; exit 1)
+
+# Step 3: Deploy application
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'deploy-app'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud builds submit --config=app-deploy.yaml \
+      --substitutions=_PROJECT_ID=${_PROJECT_ID},_ZONE=${_ZONE},_CLUSTER_NAME=${_CLUSTER_NAME} \
+      || (echo "App deployment failed"; exit 1)
+
+substitutions:
+  _PROJECT_ID: ${PROJECT_ID}
+  _ZONE: us-central1-a
+  _MACHINE_TYPE: f1-micro
+  _CLUSTER_NAME: tasky-cluster
+  _NODE_COUNT: "3"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

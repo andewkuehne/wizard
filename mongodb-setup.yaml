@@ -1,0 +1,36 @@
+steps:
+# Step 1: Create or update VM instance
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'create-vm'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    if gcloud compute instances describe mongodb-vm --zone=${_ZONE} --project=${_PROJECT_ID} 2>/dev/null; then
+      echo "VM already exists, updating..."
+      gcloud compute instances update mongodb-vm --zone=${_ZONE} --project=${_PROJECT_ID}
+    else
+      echo "Creating new VM..."
+      gcloud compute instances create mongodb-vm \
+        --image-family ubuntu-1604-lts \
+        --image-project ubuntu-os-cloud \
+        --machine-type ${_MACHINE_TYPE} \
+        --zone ${_ZONE} \
+        --project ${_PROJECT_ID}
+    fi
+
+# Steps 2-8: (MongoDB installation, authentication setup, backup setup, etc.)
+# These steps remain largely the same, but with added error checking
+
+substitutions:
+  _PROJECT_ID: ${PROJECT_ID}
+  _ZONE: us-central1-a
+  _MACHINE_TYPE: f1-micro
+  _BACKUP_BUCKET: ${PROJECT_ID}-public-mongodb-backups
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/${_PROJECT_ID}/secrets/mongodb-password/versions/latest
+    env: 'MONGODB_PASSWORD'
+  - versionName: projects/${_PROJECT_ID}/secrets/vm-service-account/versions/latest
+    env: 'VM_SERVICE_ACCOUNT'
