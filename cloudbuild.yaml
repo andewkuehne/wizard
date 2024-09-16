@@ -1,25 +1,65 @@
 steps:
 # Step 1: MongoDB Setup
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: 'mongodb-setup'
+  id: 'create-mongodb-vm'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    gcloud builds submit --config=mongodb-setup.yaml \
-    --substitutions=_ZONE=${_ZONE},_MACHINE_TYPE=${_MACHINE_TYPE},_BACKUP_BUCKET=${_BACKUP_BUCKET}
+    gcloud compute instances create mongodb-vm \
+    --image-family ubuntu-1604-lts \
+    --image-project ubuntu-os-cloud \
+    --machine-type ${_MACHINE_TYPE} \
+    --zone ${_ZONE}
 
-# GKE Setup
+# Step 2: Install MongoDB
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: 'gke-setup'
+  id: 'install-mongodb'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    gcloud builds submit --config=gke-setup.yaml \
-    --substitutions=_ZONE=${_ZONE},_CLUSTER_NAME=${_CLUSTER_NAME},_NODE_COUNT=${_NODE_COUNT}
+    gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
+    sudo apt-get update && \
+    wget -qO - https://www.mongodb.org/static/pgp/server-3.6.asc | sudo apt-key add - && \
+    echo 'deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse' | sudo tee /etc/apt/sources.list.d/mongodb-org-3.6.list && \
+    sudo apt-get update && \
+    sudo apt-get install -y mongodb-org && \
+    sudo systemctl start mongod && \
+    sudo systemctl enable mongod
+    "
 
-# Step 3: Get GKE credentials
+# Step 3: Setup MongoDB Auth
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'setup-mongodb-auth'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
+    mongo admin --eval 'db.createUser({user: \"admin\", pwd: \"$$MONGODB_PASSWORD\", roles: [{role: \"root\", db: \"admin\"}]})' && \
+    sudo sed -i 's/#security:/security:\\n  authorization: enabled/' /etc/mongod.conf && \
+    sudo systemctl restart mongod
+    "
+  secretEnv: ['MONGODB_PASSWORD']
+
+# Step 4: Create Backup Bucket
+- name: 'gcr.io/cloud-builders/gsutil'
+  id: 'create-backup-bucket'
+  args: ['mb', '-p', '${PROJECT_ID}', 'gs://${_BACKUP_BUCKET}']
+
+# Step 5: GKE Setup
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'create-gke-cluster'
+  args:
+  - 'container'
+  - 'clusters'
+  - 'create'
+  - '${_CLUSTER_NAME}'
+  - '--num-nodes=${_NODE_COUNT}'
+  - '--zone=${_ZONE}'
+
+# Step 6: Get GKE credentials
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'get-credentials'
   args:
@@ -30,12 +70,12 @@ steps:
   - '--zone=${_ZONE}'
   - '--project=${PROJECT_ID}'
 
-# Step 4: Traefik Setup
+# Traefik Setup
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'traefik-setup'
   args: ['apply', '-f', 'traefik-config.yml']
 
-# Step 5: Build and push Docker image
+# Step 7: Build and push Docker image
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
   args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', '.']
@@ -43,7 +83,7 @@ steps:
   id: 'push-image'
   args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
-# Step 6: Create Kubernetes secret
+# Step 8: Create Kubernetes secret
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'create-secret'
   entrypoint: 'bash'
@@ -55,7 +95,7 @@ steps:
       --dry-run=client -o yaml | kubectl apply -f -
   secretEnv: ['MONGODB_PASSWORD']
 
-# Step 7: Apply Kubernetes Deployment
+# Step 9: Apply Kubernetes Deployment
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-deployment'
   args:
