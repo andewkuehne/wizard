@@ -95,7 +95,7 @@ steps:
     
     [Service]
     Type=oneshot
-    ExecStart=/bin/bash -c '/usr/local/bin/mongodb_backup.sh "$(cat /etc/mongodb_backup_password)"'
+    ExecStart=/bin/bash -c '/usr/local/bin/mongodb_backup.sh "\$$(cat /etc/mongodb_backup_password)"'
     
     [Install]
     WantedBy=multi-user.target
@@ -104,20 +104,18 @@ steps:
     # Copy files to the MongoDB VM
     gcloud compute scp mongodb_backup.sh mongodb_backup.service mongodb-vm:/home/mongodb_user/ --zone=${_ZONE}
     
-    # Fetch MongoDB password from Secret Manager
-    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
-    
     # Set up the backup script and service on the MongoDB VM
     gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
       sudo mv /home/mongodb_user/mongodb_backup.sh /usr/local/bin/mongodb_backup.sh && \
       sudo chmod +x /usr/local/bin/mongodb_backup.sh && \
       sudo mv /home/mongodb_user/mongodb_backup.service /etc/systemd/system/mongodb_backup.service && \
-      echo '$MONGODB_PASSWORD' | sudo tee /etc/mongodb_backup_password > /dev/null && \
+      echo '$$MONGODB_PASSWORD' | sudo tee /etc/mongodb_backup_password > /dev/null && \
       sudo chmod 600 /etc/mongodb_backup_password && \
       sudo systemctl daemon-reload && \
       sudo systemctl enable mongodb_backup.service && \
       echo '0 2 * * * root systemctl start mongodb_backup.service' | sudo tee -a /etc/crontab
     "
+  secretEnv: ['MONGODB_PASSWORD']
 
 # Step 6: Check, delete if exists, and recreate GKE Cluster
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -214,6 +212,11 @@ steps:
     kubectl get deployments --all-namespaces
     kubectl get services --all-namespaces
     kubectl get ingress --all-namespaces
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/${PROJECT_ID}/secrets/mongodb-password/versions/latest
+    env: 'MONGODB_PASSWORD'
 
 substitutions:
   _ZONE: us-central1-a
