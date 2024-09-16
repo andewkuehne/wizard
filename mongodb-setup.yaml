@@ -1,36 +1,70 @@
 steps:
-# Step 1: Create or update VM instance
+# Step 1: Create a VM instance
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: 'create-vm'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    if gcloud compute instances describe mongodb-vm --zone=${_ZONE} --project=${_PROJECT_ID} 2>/dev/null; then
-      echo "VM already exists, updating..."
-      gcloud compute instances update mongodb-vm --zone=${_ZONE} --project=${_PROJECT_ID}
-    else
-      echo "Creating new VM..."
-      gcloud compute instances create mongodb-vm \
-        --image-family ubuntu-1604-lts \
-        --image-project ubuntu-os-cloud \
-        --machine-type ${_MACHINE_TYPE} \
-        --zone ${_ZONE} \
-        --project ${_PROJECT_ID}
-    fi
+    gcloud compute instances create mongodb-vm \
+    --image-family ubuntu-1604-lts \
+    --image-project ubuntu-os-cloud \
+    --machine-type ${_MACHINE_TYPE} \
+    --zone ${_ZONE}
 
-# Steps 2-8: (MongoDB installation, authentication setup, backup setup, etc.)
-# These steps remain largely the same, but with added error checking
+# Step 2: Wait for VM to be ready
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "echo 'VM is ready'"
+
+# Step 3: Install MongoDB
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
+    sudo apt-get update && \
+    wget -qO - https://www.mongodb.org/static/pgp/server-3.6.asc | sudo apt-key add - && \
+    echo 'deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse' | sudo tee /etc/apt/sources.list.d/mongodb-org-3.6.list && \
+    sudo apt-get update && \
+    sudo apt-get install -y mongodb-org && \
+    sudo systemctl start mongod && \
+    sudo systemctl enable mongod
+    "
+
+# Step 4: Set up MongoDB authentication
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
+    mongo admin --eval 'db.createUser({user: \"admin\", pwd: \"$$MONGODB_PASSWORD\", roles: [{role: \"root\", db: \"admin\"}]})' && \
+    sudo sed -i 's/#security:/security:\\n  authorization: enabled/' /etc/mongod.conf && \
+    sudo systemctl restart mongod
+    "
+  secretEnv: ['MONGODB_PASSWORD']
+
+# Step 5: Create a backup bucket (optional)
+- name: 'gcr.io/cloud-builders/gsutil'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET} || echo "Bucket already exists"
 
 substitutions:
-  _PROJECT_ID: ${PROJECT_ID}
   _ZONE: us-central1-a
-  _MACHINE_TYPE: f1-micro
-  _BACKUP_BUCKET: ${PROJECT_ID}-public-mongodb-backups
+  _MACHINE_TYPE: e2-medium
+  _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
 
 availableSecrets:
   secretManager:
-  - versionName: projects/${_PROJECT_ID}/secrets/mongodb-password/versions/latest
+  - versionName: projects/${PROJECT_ID}/secrets/mongodb-password/versions/latest
     env: 'MONGODB_PASSWORD'
-  - versionName: projects/${_PROJECT_ID}/secrets/vm-service-account/versions/latest
-    env: 'VM_SERVICE_ACCOUNT'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
