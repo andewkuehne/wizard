@@ -51,29 +51,30 @@ steps:
 # Step 5: GKE Setup
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'create-gke-cluster'
+  entrypoint: 'bash'
   args:
-  - 'container'
-  - 'clusters'
-  - 'create'
-  - '${_CLUSTER_NAME}'
-  - '--num-nodes=${_NODE_COUNT}'
-  - '--zone=${_ZONE}'
+  - '-c'
+  - |
+    set -e
+    gcloud container clusters create ${_CLUSTER_NAME} \
+      --num-nodes=${_NODE_COUNT} \
+      --zone=${_ZONE} \
+      --project=${PROJECT_ID}
+    
+    # Set kubectl context
+    gcloud container clusters get-credentials ${_CLUSTER_NAME} \
+      --zone=${_ZONE} \
+      --project=${PROJECT_ID}
 
-# Step 6: Get GKE credentials
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: 'get-credentials'
-  args:
-  - 'container'
-  - 'clusters'
-  - 'get-credentials'
-  - '${_CLUSTER_NAME}'
-  - '--zone=${_ZONE}'
-  - '--project=${PROJECT_ID}'
-
-# Traefik Setup
+# Step 6: Traefik Setup
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'traefik-setup'
-  args: ['apply', '-f', 'traefik-config.yml']
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    kubectl config view
+    kubectl apply -f traefik-config.yml
 
 # Step 7: Build and push Docker image
 - name: 'gcr.io/cloud-builders/docker'
@@ -102,6 +103,37 @@ steps:
   - 'apply'
   - '-f'
   - 'k8s-deployment.yml'
+
+# Cleanup Step
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'cleanup'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    if [ $STATUS != "SUCCESS" ]; then
+      echo "Build failed. Cleaning up resources..."
+      
+      # Delete GKE cluster
+      gcloud container clusters delete ${_CLUSTER_NAME} \
+        --zone=${_ZONE} \
+        --project=${PROJECT_ID} \
+        --quiet
+
+      # Delete MongoDB VM
+      gcloud compute instances delete mongodb-vm \
+        --zone=${_ZONE} \
+        --project=${PROJECT_ID} \
+        --quiet
+
+      # Delete backup bucket
+      gsutil rm -r gs://${_BACKUP_BUCKET} || true
+
+      echo "Cleanup completed."
+    else
+      echo "Build successful. No cleanup needed."
+    fi
+  waitFor: ['-']
 
 substitutions:
   _ZONE: us-central1-a
