@@ -1,3 +1,5 @@
+---
+# Traefik Configuration
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -79,3 +81,68 @@ spec:
       targetPort: web
   selector:
     app: traefik
+
+---
+# Application Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasky-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tasky
+  template:
+    metadata:
+      labels:
+        app: tasky
+    spec:
+      containers:
+      - name: tasky
+        image: gcr.io/${PROJECT_ID}/tasky-app:v1
+        ports:
+        - containerPort: 3000
+        env:
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: uri
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tasky-service
+spec:
+  type: ClusterIP
+  selector:
+    app: tasky
+  ports:
+  - port: 80
+    targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasky-ingress
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tasky-service
+            port: 
+              number: 80
