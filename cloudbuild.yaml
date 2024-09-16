@@ -7,7 +7,7 @@ steps:
   - '-c'
   - |
     gcloud compute instances create mongodb-vm \
-    --image-family ubuntu-1604-lts \
+    --image-family ubuntu-2004-lts \
     --image-project ubuntu-os-cloud \
     --machine-type ${_MACHINE_TYPE} \
     --zone ${_ZONE}
@@ -21,8 +21,8 @@ steps:
   - |
     gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
     sudo apt-get update && \
-    wget -qO - https://www.mongodb.org/static/pgp/server-3.6.asc | sudo apt-key add - && \
-    echo 'deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse' | sudo tee /etc/apt/sources.list.d/mongodb-org-3.6.list && \
+    wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add - && \
+    echo 'deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse' | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list && \
     sudo apt-get update && \
     sudo apt-get install -y mongodb-org && \
     sudo systemctl start mongod && \
