@@ -92,7 +92,7 @@ steps:
     MONGO_HOST="localhost"
     MONGO_PORT="27017"
     MONGO_USER="admin"
-    MONGO_PASS="\$MONGODB_PASSWORD"
+    MONGO_PASS="\$(gcloud secrets versions access latest --secret=mongodb-password)"
 
     # Backup details
     BACKUP_DIR="/tmp/mongodb_backup"
@@ -125,13 +125,21 @@ steps:
   args:
   - '-c'
   - |
+    # Copy the backup script to the MongoDB VM
     gcloud compute scp mongodb_backup.sh mongodb-vm:/home/mongodb_user/mongodb_backup.sh --zone=${_ZONE}
     
+    # Set up the backup script on the MongoDB VM
     gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
       sudo mv /home/mongodb_user/mongodb_backup.sh /usr/local/bin/mongodb_backup.sh && \
       sudo chmod +x /usr/local/bin/mongodb_backup.sh && \
       echo '0 2 * * * /usr/local/bin/mongodb_backup.sh' | sudo tee -a /etc/crontab
     "
+    
+    # Grant the MongoDB VM's service account access to the Secret Manager secret
+    PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
+    gcloud secrets add-iam-policy-binding mongodb-password \
+      --member=serviceAccount:$${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
+      --role=roles/secretmanager.secretAccessor
 
 # Step 7: Check, delete if exists, and recreate GKE Cluster
 - name: 'gcr.io/cloud-builders/gcloud'
