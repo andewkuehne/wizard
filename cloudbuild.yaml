@@ -122,6 +122,7 @@ substitutions:
   _CLUSTER_NAME: tasky-cluster
   _NODE_COUNT: "3"
   _MACHINE_TYPE: e2-medium
+  _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
 
 options:
   logging: CLOUD_LOGGING_ONLY
