@@ -108,7 +108,7 @@ steps:
     gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
       sudo mv /tmp/mongodb_backup.sh /usr/local/bin/mongodb_backup.sh && \
       sudo chmod +x /usr/local/bin/mongodb_backup.sh && \
-      sudo mv /home/mongodb_user/mongodb_backup.service /etc/systemd/system/mongodb_backup.service && \
+      sudo mv /tmp/mongodb_backup.service /etc/systemd/system/mongodb_backup.service && \
       echo '$$MONGODB_PASSWORD' | sudo tee /etc/mongodb_backup_password > /dev/null && \
       sudo chmod 600 /etc/mongodb_backup_password && \
       sudo systemctl daemon-reload && \
