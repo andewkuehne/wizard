@@ -36,12 +36,12 @@ steps:
   args:
   - '-c'
   - |
+    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
     gcloud compute ssh mongodb-vm --zone ${_ZONE} --command "
-    mongo admin --eval 'db.createUser({user: \"admin\", pwd: \"$$MONGODB_PASSWORD\", roles: [{role: \"root\", db: \"admin\"}]})' && \
+    mongo admin --eval 'db.createUser({user: \"admin\", pwd: \"$${MONGODB_PASSWORD}\", roles: [{role: \"root\", db: \"admin\"}]})' && \
     sudo sed -i 's/#security:/security:\\n  authorization: enabled/' /etc/mongod.conf && \
     sudo systemctl restart mongod
     "
-  secretEnv: ['MONGODB_PASSWORD']
 
 # Step 4: Create Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
@@ -90,10 +90,10 @@ steps:
   args:
   - '-c'
   - |
+    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
     kubectl create secret generic mongodb-secret \
-      --from-literal=uri="mongodb://admin:$$MONGODB_PASSWORD@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)'):27017/admin" \
+      --from-literal=uri="mongodb://admin:$${MONGODB_PASSWORD}@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)'):27017/admin" \
       --dry-run=client -o yaml | kubectl apply -f -
-  secretEnv: ['MONGODB_PASSWORD']
 
 # Step 9: Apply Kubernetes Deployment
 - name: 'gcr.io/cloud-builders/kubectl'
@@ -109,11 +109,6 @@ substitutions:
   _NODE_COUNT: "3"
   _MACHINE_TYPE: e2-medium
   _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
-
-availableSecrets:
-  secretManager:
-  - versionName: projects/${PROJECT_ID}/secrets/mongodb-password/versions/latest
-    env: 'MONGODB_PASSWORD'
 
 options:
   logging: CLOUD_LOGGING_ONLY
