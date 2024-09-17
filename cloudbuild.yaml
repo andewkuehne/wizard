@@ -1,8 +1,7 @@
 steps:
-# Step 1: Check, rename if exists, and create Backup Bucket
+# Step 1: Check, archive, and create Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
   id: 'manage-backup-bucket'
-  waitFor: ['-']  # This allows it to start immediately
   entrypoint: 'bash'
   args:
   - '-c'
