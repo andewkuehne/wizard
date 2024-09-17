@@ -233,6 +233,12 @@ steps:
       --dry-run=client -o yaml | kubectl apply -f -
 
 # Step 15: Networking
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'configure-networking'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
     set -e
     
     # If the networks are different, set up VPC peering
