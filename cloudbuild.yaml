@@ -271,12 +271,6 @@ steps:
         --rules=tcp:27017 \
         --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
     fi
-    
-    # Update the MongoDB URI in the Kubernetes secret to use the internal IP
-    kubectl create secret generic tasky-secrets \
-      --from-literal=MONGODB_URI="mongodb://admin:$(gcloud secrets versions access latest --secret=mongodb-password)@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].networkIP)'):27017/admin" \
-      --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
-      --dry-run=client -o yaml | kubectl apply -f -
 
 # Step 16: Apply k8s Configs
 - name: 'gcr.io/cloud-builders/kubectl'
