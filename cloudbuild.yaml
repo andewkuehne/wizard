@@ -30,9 +30,9 @@ steps:
 - name: 'gcr.io/cloud-builders/gsutil'
   id: 'manage-backup-bucket'
   entrypoint: 'bash'
-  args: [
-    '-c',
-    '
+  args: 
+  - '-c'
+  - |
     set -e
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Archiving..."
@@ -57,8 +57,7 @@ steps:
     
     echo "Verifying bucket permissions:"
     gsutil iam get gs://${_BACKUP_BUCKET}
-    '
-  ]
+
   
 # Step 3: Install MongoDB 
 - name: 'gcr.io/cloud-builders/gcloud'
