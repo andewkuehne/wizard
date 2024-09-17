@@ -30,10 +30,10 @@ steps:
 - name: 'gcr.io/cloud-builders/gsutil'
   id: 'manage-backup-bucket'
   entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    set -e    
+  args: [
+    '-c',
+    '
+    set -e
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Archiving..."
       if ! gsutil ls -b gs://${PROJECT_ID}-archive &>/dev/null; then
@@ -49,12 +49,17 @@ steps:
     gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
     echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
     
+    echo "Setting public read permissions for the bucket..."
+    gsutil iam ch allUsers:objectViewer gs://${_BACKUP_BUCKET}
+    
     echo "Setting permissions for the VM to access the bucket..."
     gsutil iam ch serviceAccount:${_VM_SERVICE_ACCOUNT}:objectAdmin gs://${_BACKUP_BUCKET}
-    echo "Bucket permissions set for VM access."
     
     echo "Verifying bucket permissions:"
     gsutil iam get gs://${_BACKUP_BUCKET}
+    '
+  ]
+  
 # Step 3: Install MongoDB 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'install-mongodb'
