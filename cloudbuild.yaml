@@ -1,28 +1,5 @@
 steps:
-# Step 1: Check, archive, and create Backup Bucket
-- name: 'gcr.io/cloud-builders/gsutil'
-  id: 'manage-backup-bucket'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    set -e
-    if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
-      echo "Backup bucket exists. Archiving..."
-      if ! gsutil ls -b gs://${PROJECT_ID}-archive &>/dev/null; then
-        gsutil mb -p ${PROJECT_ID} gs://${PROJECT_ID}-archive
-      fi
-      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${PROJECT_ID}-archive
-      gsutil rm -r gs://${_BACKUP_BUCKET}
-      echo "Bucket Archived to ${PROJECT_ID}-archive"
-    else
-      echo "Backup bucket does not exist."
-    fi
-    echo "Creating new backup bucket..."
-    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
-    echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
-    
-# Step 2: Check, delete if exists, and recreate MongoDB VM
+# Step 1: Check, delete if exists, and recreate MongoDB VM
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'manage-mongodb-vm'
   entrypoint: 'bash'
@@ -45,8 +22,45 @@ steps:
     --image-family ubuntu-2004-lts \
     --image-project ubuntu-os-cloud \
     --machine-type ${_MACHINE_TYPE} \
-    --zone ${_ZONE}
+    --zone ${_ZONE} \
+    --scopes=https://www.googleapis.com/auth/devstorage.read_write
 
+    # Capture the service account of the VM
+    VM_SERVICE_ACCOUNT=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(serviceAccounts[0].email)')
+    echo "VM_SERVICE_ACCOUNT=${VM_SERVICE_ACCOUNT}" >> /workspace/env_vars
+    
+# Step 2: Check, archive, and create Backup Bucket
+- name: 'gcr.io/cloud-builders/gsutil'
+  id: 'manage-backup-bucket'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    # Load the VM service account
+    source /workspace/env_vars
+    
+    if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
+      echo "Backup bucket exists. Archiving..."
+      if ! gsutil ls -b gs://${PROJECT_ID}-archive &>/dev/null; then
+        gsutil mb -p ${PROJECT_ID} gs://${PROJECT_ID}-archive
+      fi
+      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${PROJECT_ID}-archive
+      gsutil rm -r gs://${_BACKUP_BUCKET}
+      echo "Bucket Archived to ${PROJECT_ID}-archive"
+    else
+      echo "Backup bucket does not exist."
+    fi
+    echo "Creating new backup bucket..."
+    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
+    echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
+    
+    echo "Setting permissions for the VM to access the bucket..."
+    gsutil iam ch serviceAccount:${VM_SERVICE_ACCOUNT}:objectAdmin gs://${_BACKUP_BUCKET}
+    echo "Bucket permissions set for VM access."
+    
+    echo "Verifying bucket permissions:"
+    gsutil iam get gs://${_BACKUP_BUCKET}
 # Step 3: Install MongoDB 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'install-mongodb'
