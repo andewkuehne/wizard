@@ -159,26 +159,19 @@ steps:
   args:
   - '-c'
   - |
-    # Get the VPC network name of the GKE cluster
-    CLUSTER_NETWORK=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)')
-    
-    # Get the subnet name of the GKE cluster
-    CLUSTER_SUBNET=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(subnetwork)')
-    
-    # Get the VPC network name of the MongoDB VM
-    VM_NETWORK=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())')
+    set -e
     
     # If the networks are different, set up VPC peering
-    if [ "$CLUSTER_NETWORK" != "$VM_NETWORK" ]; then
-      echo "Setting up VPC peering between $CLUSTER_NETWORK and $VM_NETWORK"
+    if [ "$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)')" != "$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())')" ]; then
+      echo "Setting up VPC peering between cluster network and VM network"
       gcloud compute networks peerings create gke-to-mongodb \
-        --network=$CLUSTER_NETWORK \
-        --peer-network=$VM_NETWORK \
+        --network=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)') \
+        --peer-network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
         --auto-create-routes
       
       gcloud compute networks peerings create mongodb-to-gke \
-        --network=$VM_NETWORK \
-        --peer-network=$CLUSTER_NETWORK \
+        --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
+        --peer-network=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)') \
         --auto-create-routes
     fi
     
@@ -186,25 +179,18 @@ steps:
     gcloud compute firewall-rules create allow-gke-to-mongodb \
       --direction=INGRESS \
       --priority=1000 \
-      --network=$VM_NETWORK \
+      --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
       --action=ALLOW \
       --rules=tcp:27017 \
       --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
     
-    # Get the internal IP of the MongoDB VM
-    MONGODB_IP=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].networkIP)')
-    
     # Update the MongoDB URI in the Kubernetes secret to use the internal IP
-    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
-    MONGODB_URI="mongodb://admin:$${MONGODB_PASSWORD}@$${MONGODB_IP}:27017/admin"
-    
     kubectl create secret generic tasky-secrets \
-      --from-literal=MONGODB_URI="$${MONGODB_URI}" \
+      --from-literal=MONGODB_URI="mongodb://admin:$(gcloud secrets versions access latest --secret=mongodb-password)@$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].networkIP)'):27017/admin" \
       --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-
-# Step 8: Modify the MongoDB configuration to allow connections from the GKE cluster
+# Step 9: Modify the MongoDB configuration to allow connections from the GKE cluster
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'configure-mongodb'
   entrypoint: 'bash'
