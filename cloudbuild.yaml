@@ -222,14 +222,17 @@ steps:
   - '-c'
   - |
     set -e
-    set -x
+    echo "Substituting PROJECT_ID in Kubernetes config..."
+    sed -i 's|PROJECT_ID_PLACEHOLDER|'"${PROJECT_ID}"'|g' combined-k8s-config.yaml
+    
     echo "Applying Kubernetes configuration:"
-    sed -i 's|${PROJECT_ID}|'"${PROJECT_ID}"'|g' combined-k8s-config.yaml
     kubectl apply -f combined-k8s-config.yaml
+    
     echo "Verifying deployments:"
     kubectl get deployments --all-namespaces
     kubectl get services --all-namespaces
     kubectl get ingress --all-namespaces
+    
     echo "Checking pod status:"
     kubectl get pods
     kubectl describe pods
