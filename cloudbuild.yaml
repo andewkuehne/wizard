@@ -234,12 +234,6 @@ steps:
       --dry-run=client -o yaml | kubectl apply -f -
 
 # Step 15: Networking
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: 'configure-networking'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
     set -e
     
     # If the networks are different, set up VPC peering
@@ -256,14 +250,26 @@ steps:
         --auto-create-routes
     fi
     
-    # Create a firewall rule to allow traffic from GKE to MongoDB
-    gcloud compute firewall-rules create allow-gke-to-mongodb \
-      --direction=INGRESS \
-      --priority=1000 \
-      --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
-      --action=ALLOW \
-      --rules=tcp:27017 \
-      --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
+    # Check if firewall rule exists
+    if gcloud compute firewall-rules describe allow-gke-to-mongodb &>/dev/null; then
+      echo "Firewall rule 'allow-gke-to-mongodb' exists. Updating..."
+      gcloud compute firewall-rules update allow-gke-to-mongodb \
+        --direction=INGRESS \
+        --priority=1000 \
+        --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
+        --action=ALLOW \
+        --rules=tcp:27017 \
+        --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
+    else
+      echo "Creating firewall rule 'allow-gke-to-mongodb'..."
+      gcloud compute firewall-rules create allow-gke-to-mongodb \
+        --direction=INGRESS \
+        --priority=1000 \
+        --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
+        --action=ALLOW \
+        --rules=tcp:27017 \
+        --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
+    fi
     
     # Update the MongoDB URI in the Kubernetes secret to use the internal IP
     kubectl create secret generic tasky-secrets \
