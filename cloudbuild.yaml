@@ -211,7 +211,7 @@ steps:
       --from-literal=SECRET_KEY="$${SECRET_KEY}" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-# Step 14: Modify the Kubernetes config application step
+# Step 14: Apply k8s Configs
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-config'
   entrypoint: 'bash'
@@ -231,15 +231,42 @@ steps:
     kubectl get pods
     kubectl describe pods
 
-# Step 15: Check the logs of the Tasky pods
+# Step 15: Debug Pod Status
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'debug-pod-status'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "Debugging pod status:"
+    kubectl get pods -o wide
+    kubectl describe pods -l app=tasky
+    echo "Checking node status:"
+    kubectl describe nodes
+    echo "Checking events:"
+    kubectl get events --sort-by=.metadata.creationTimestamp
+
+# Step 16: Verfiy image
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'check-image-availability'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "Verifying image in Container Registry:"
+    gcloud container images describe gcr.io/${PROJECT_ID}/tasky-app:v1
+
+# Step 17: Check Tasky pod logs
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'check-pod-logs'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
+    echo "Waiting for pods to be ready..."
+    kubectl wait --for=condition=ready pod -l app=tasky --timeout=300s
     echo "Checking Tasky pod logs:"
-    kubectl logs -l app=tasky --tail=50
+    kubectl logs -l app=tasky --all-containers=true
 
 images:
 - 'gcr.io/${PROJECT_ID}/tasky-app:v1'
