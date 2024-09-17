@@ -159,17 +159,26 @@ steps:
   args:
   - '-c'
   - |
+    # Get the VPC network name of the GKE cluster
+    CLUSTER_NETWORK=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)')
+    
+    # Get the subnet name of the GKE cluster
+    CLUSTER_SUBNET=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(subnetwork)')
+    
+    # Get the VPC network name of the MongoDB VM
+    VM_NETWORK=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())')
+    
     # If the networks are different, set up VPC peering
-    if [ "$_CLUSTER_NETWORK" != "$_VM_NETWORK" ]; then
-      echo "Setting up VPC peering between $_CLUSTER_NETWORK and $_VM_NETWORK"
+    if [ "$CLUSTER_NETWORK" != "$VM_NETWORK" ]; then
+      echo "Setting up VPC peering between $CLUSTER_NETWORK and $VM_NETWORK"
       gcloud compute networks peerings create gke-to-mongodb \
-        --network=$_CLUSTER_NETWORK \
-        --peer-network=$_VM_NETWORK \
+        --network=$CLUSTER_NETWORK \
+        --peer-network=$VM_NETWORK \
         --auto-create-routes
       
       gcloud compute networks peerings create mongodb-to-gke \
-        --network=$_VM_NETWORK \
-        --peer-network=$_CLUSTER_NETWORK \
+        --network=$VM_NETWORK \
+        --peer-network=$CLUSTER_NETWORK \
         --auto-create-routes
     fi
     
@@ -177,7 +186,7 @@ steps:
     gcloud compute firewall-rules create allow-gke-to-mongodb \
       --direction=INGRESS \
       --priority=1000 \
-      --network=$_VM_NETWORK \
+      --network=$VM_NETWORK \
       --action=ALLOW \
       --rules=tcp:27017 \
       --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
@@ -193,6 +202,7 @@ steps:
       --from-literal=MONGODB_URI="$${MONGODB_URI}" \
       --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
       --dry-run=client -o yaml | kubectl apply -f -
+
 
 # Step 8: Modify the MongoDB configuration to allow connections from the GKE cluster
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -341,8 +351,6 @@ substitutions:
   _NODE_COUNT: "3"
   _MACHINE_TYPE: e2-medium
   _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
-  _CLUSTER_NETWORK: $(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)')
-  _VM_NETWORK: $(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())')
 
 options:
   logging: CLOUD_LOGGING_ONLY
