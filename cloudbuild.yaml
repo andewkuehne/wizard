@@ -152,12 +152,74 @@ steps:
       --zone=${_ZONE} \
       --project=${PROJECT_ID}
 
-# Step 7: Clone Tasky repository
+# Step 7: Networking
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'configure-networking'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    # Get the VPC network name of the GKE cluster
+    CLUSTER_NETWORK=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(network)')
+    
+    # Get the subnet name of the GKE cluster
+    CLUSTER_SUBNET=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(subnetwork)')
+    
+    # Get the VPC network name of the MongoDB VM
+    VM_NETWORK=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())')
+    
+    # If the networks are different, set up VPC peering
+    if [ "$CLUSTER_NETWORK" != "$VM_NETWORK" ]; then
+      echo "Setting up VPC peering between $CLUSTER_NETWORK and $VM_NETWORK"
+      gcloud compute networks peerings create gke-to-mongodb \
+        --network=$CLUSTER_NETWORK \
+        --peer-network=$VM_NETWORK \
+        --auto-create-routes
+      
+      gcloud compute networks peerings create mongodb-to-gke \
+        --network=$VM_NETWORK \
+        --peer-network=$CLUSTER_NETWORK \
+        --auto-create-routes
+    fi
+    
+    # Create a firewall rule to allow traffic from GKE to MongoDB
+    gcloud compute firewall-rules create allow-gke-to-mongodb \
+      --direction=INGRESS \
+      --priority=1000 \
+      --network=$VM_NETWORK \
+      --action=ALLOW \
+      --rules=tcp:27017 \
+      --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
+    
+    # Get the internal IP of the MongoDB VM
+    MONGODB_IP=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].networkIP)')
+    
+    # Update the MongoDB URI in the Kubernetes secret to use the internal IP
+    MONGODB_PASSWORD=$(gcloud secrets versions access latest --secret=mongodb-password)
+    MONGODB_URI="mongodb://admin:$${MONGODB_PASSWORD}@$${MONGODB_IP}:27017/admin"
+    
+    kubectl create secret generic tasky-secrets \
+      --from-literal=MONGODB_URI="$${MONGODB_URI}" \
+      --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+# Step 8: Modify the MongoDB configuration to allow connections from the GKE cluster
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'configure-mongodb'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute ssh mongodb-vm --zone=${_ZONE} --command="
+      sudo sed -i 's/bindIp: 127.0.0.1/bindIp: 0.0.0.0/' /etc/mongod.conf
+      sudo systemctl restart mongod
+    "
+# Step 9: Clone Tasky repository
 - name: 'gcr.io/cloud-builders/git'
   id: 'clone-tasky-repo'
   args: ['clone', 'https://github.com/jeffthorne/tasky.git']
 
-# Step 8: Create wizexercise.txt
+# Step 10: Create wizexercise.txt
 - name: 'ubuntu'
   id: 'create-wizexercise-file'
   entrypoint: 'bash'
@@ -166,12 +228,12 @@ steps:
   - |
     echo "WIZ.IO IS AWESOME" > wizexercise.txt
 
-# Step 9: Build Docker image
+# Step 11: Build Docker image
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
   args: ['build', '-t', 'gcr.io/${PROJECT_ID}/tasky-app:v1', './tasky']
 
-# Step 10: Inject wizexercise.txt into the container
+# Step 12: Inject wizexercise.txt into the container
 - name: 'gcr.io/cloud-builders/docker'
   id: 'inject-wizexercise-file'
   entrypoint: 'bash'
@@ -183,13 +245,13 @@ steps:
     docker commit $container_id gcr.io/${PROJECT_ID}/tasky-app:v1
     docker rm $container_id
     
-# Step 11: Push Docker image
+# Step 13: Push Docker image
 - name: 'gcr.io/cloud-builders/docker'
   id: 'push-image'
   args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
 
-# Step 12: Verify the image
+# Step 14: Verify the image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'verify-image'
   entrypoint: 'bash'
@@ -198,7 +260,7 @@ steps:
   - |
     gcloud container images list-tags gcr.io/${PROJECT_ID}/tasky-app
 
-# Step 13: Create Kubernetes secrets
+# Step 15: Create Kubernetes secrets
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'create-secrets'
   entrypoint: 'bash'
@@ -213,7 +275,7 @@ steps:
       --from-literal=SECRET_KEY="$${SECRET_KEY}" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-# Step 14: Apply k8s Configs
+# Step 16: Apply k8s Configs
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-config'
   entrypoint: 'bash'
@@ -236,7 +298,7 @@ steps:
     kubectl get pods
     kubectl describe pods
 
-# Step 15: Debug Pod Status
+# Step 17: Debug Pod Status
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'debug-pod-status'
   entrypoint: 'bash'
@@ -251,7 +313,7 @@ steps:
     echo "Checking events:"
     kubectl get events --sort-by=.metadata.creationTimestamp
 
-# Step 16: Verfiy image
+# Step 18: Verfiy image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'check-image-availability'
   entrypoint: 'bash'
@@ -261,7 +323,7 @@ steps:
     echo "Verifying image in Container Registry:"
     gcloud container images describe gcr.io/${PROJECT_ID}/tasky-app:v1
 
-# Step 17: Check Tasky pod logs
+# Step 19: Check Tasky pod logs
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'check-pod-logs'
   entrypoint: 'bash'
