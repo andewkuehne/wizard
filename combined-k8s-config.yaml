@@ -102,7 +102,8 @@ spec:
       - name: tasky
         image: gcr.io/PROJECT_ID_PLACEHOLDER/tasky-app:v1
         ports:
-        - containerPort: 8080
+        - name: http
+          containerPort: 8080
         env:
         - name: MONGODB_URI
           valueFrom:
@@ -131,8 +132,9 @@ spec:
   selector:
     app: tasky
   ports:
-  - port: 80
-    targetPort: 8080
+  - name: http
+    port: 80
+    targetPort: http
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -150,4 +152,23 @@ spec:
           service:
             name: tasky-service
             port: 
-              number: 80
+              name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tasky-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: tasky
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: traefik
+    ports:
+    - protocol: TCP
+      port: 8080
