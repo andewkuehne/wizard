@@ -72,9 +72,9 @@ steps:
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Renaming..."
       TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-      NEW_BUCKET_NAME="${_BACKUP_BUCKET}-ARCHIVE-${TIMESTAMP}"
-      gsutil mv gs://${_BACKUP_BUCKET} gs://${NEW_BUCKET_NAME}
-      echo "Renamed existing bucket to ${NEW_BUCKET_NAME}"
+      NEW_BUCKET_NAME="${_BACKUP_BUCKET}-ARCHIVE-$TIMESTAMP"
+      gsutil mv gs://${_BACKUP_BUCKET} gs://$NEW_BUCKET_NAME
+      echo "Renamed existing bucket to $NEW_BUCKET_NAME"
     else
       echo "Backup bucket does not exist."
     fi
