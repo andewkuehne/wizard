@@ -25,9 +25,8 @@ steps:
     --zone ${_ZONE} \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write
 
-    # Capture the service account of the VM
-    VM_SERVICE_ACCOUNT=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='get(serviceAccounts[0].email)')
-    echo "VM_SERVICE_ACCOUNT=${VM_SERVICE_ACCOUNT}" >> /workspace/env_vars
+# Capture the service account of the VM and append to env_vars file
+gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value[separator="="](name,"VM_SERVICE_ACCOUNT="serviceAccounts[0].email)' >> /workspace/env_vars
     
 # Step 2: Check, archive, and create Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
