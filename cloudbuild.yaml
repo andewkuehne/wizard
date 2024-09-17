@@ -182,7 +182,17 @@ steps:
   id: 'push-image'
   args: ['push', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
-# Step 12: Create Kubernetes secrets
+
+# Step 12: Verify the image
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'verify-image'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud container images list-tags gcr.io/${PROJECT_ID}/tasky-app
+
+# Step 13: Create Kubernetes secrets
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'create-secrets'
   entrypoint: 'bash'
@@ -197,7 +207,7 @@ steps:
       --from-literal=SECRET_KEY="$${SECRET_KEY}" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-# Step 13: Apply Kubernetes configuration
+# Step 14: Modify the Kubernetes config application step
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'apply-k8s-config'
   entrypoint: 'bash'
@@ -207,11 +217,29 @@ steps:
     set -e
     set -x
     echo "Applying Kubernetes configuration:"
+    sed -i 's|${PROJECT_ID}|'"${PROJECT_ID}"'|g' combined-k8s-config.yaml
     kubectl apply -f combined-k8s-config.yaml
     echo "Verifying deployments:"
     kubectl get deployments --all-namespaces
     kubectl get services --all-namespaces
     kubectl get ingress --all-namespaces
+    echo "Checking pod status:"
+    kubectl get pods
+    kubectl describe pods
+
+# Step 15: Check the logs of the Tasky pods
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'check-pod-logs'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "Checking Tasky pod logs:"
+    kubectl logs -l app=tasky --tail=50
+
+images:
+- 'gcr.io/${PROJECT_ID}/tasky-app:v1'
+    
 
 availableSecrets:
   secretManager:
