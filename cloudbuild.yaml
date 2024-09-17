@@ -71,8 +71,10 @@ steps:
     set -e
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Archiving..."
-      gsutil mb -p ${PROJECT_ID} gs://${ARCHIVE_BUCKET}
-      gsutil -m rsync -r gs://${_BACKUP_BUCKET}-ARCHIVE-$(date +"%Y%m%d_%H%M%S")
+      if ! gsutil ls -b gs://${_BACKUP_BUCKET}-ARCHIVE &>/dev/null; then
+        gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}-ARCHIVE
+      fi
+      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${_BACKUP_BUCKET}-ARCHIVE
       gsutil rm -r gs://${_BACKUP_BUCKET}
       echo "Bucket Archived"
     else
