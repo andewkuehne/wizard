@@ -70,9 +70,11 @@ steps:
   - |
     set -e
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
-      echo "Backup bucket exists. Renaming..."
-      gsutil mv gs://${_BACKUP_BUCKET} gs://${_BACKUP_BUCKET}-ARCHIVE-$(date +"%Y%m%d_%H%M%S")
-      echo "Renamed existing bucket to ${_BACKUP_BUCKET}-ARCHIVE-$(date +"%Y%m%d_%H%M%S")"
+      echo "Backup bucket exists. Archiving..."
+      gsutil mb -p ${PROJECT_ID} gs://${ARCHIVE_BUCKET}
+      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${ARCHIVE_BUCKET}
+      gsutil rm -r gs://${_BACKUP_BUCKET}
+      echo "Bucket Archived"
     else
       echo "Backup bucket does not exist."
     fi
