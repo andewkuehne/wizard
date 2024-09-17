@@ -1,13 +1,4 @@
 steps:
-# Step 0: Get Service Account
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: 'get-default-compute-sa'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    gcloud iam service-accounts list --filter="displayName:Compute Engine default service account" --format="value(email)" | sed 's/^/DEFAULT_COMPUTE_SA=/' >> /workspace/build.env
-
 # Step 1: Check, delete if exists, and recreate MongoDB VM
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'manage-mongodb-vm'
@@ -33,7 +24,7 @@ steps:
     --image-project ubuntu-os-cloud \
     --machine-type ${_MACHINE_TYPE} \
     --zone ${_ZONE} \
-    --service-account=$DEFAULT_COMPUTE_SA \
+    --service-account=${_VM_SERVICE_ACCOUNT} \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write
     
 # Step 2: Check, archive, and create Backup Bucket
@@ -62,7 +53,7 @@ steps:
     echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
     
     echo "Setting permissions for the VM to access the bucket..."
-    gsutil iam ch serviceAccount:$DEFAULT_COMPUTE_SA:objectAdmin gs://${_BACKUP_BUCKET}
+    gsutil iam ch serviceAccount:${_VM_SERVICE_ACCOUNT}:objectAdmin gs://${_BACKUP_BUCKET}
     echo "Bucket permissions set for VM access."
     
     echo "Verifying bucket permissions:"
@@ -367,6 +358,7 @@ substitutions:
   _NODE_COUNT: "3"
   _MACHINE_TYPE: e2-medium
   _BACKUP_BUCKET: ${PROJECT_ID}-mongodb-backups
+  _VM_SERVICE_ACCOUNT: SET_BY_TRIGGER
 
 options:
   logging: CLOUD_LOGGING_ONLY
