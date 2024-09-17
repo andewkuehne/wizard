@@ -61,7 +61,7 @@ steps:
     sudo systemctl restart mongod
     "
 
-# Step 4: Check, delete if exists, and recreate Backup Bucket
+# Step 4: Check, rename if exists, and create Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
   id: 'manage-backup-bucket'
   entrypoint: 'bash'
@@ -70,13 +70,17 @@ steps:
   - |
     set -e
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
-      echo "Backup bucket exists. Deleting..."
-      gsutil rm -r gs://${_BACKUP_BUCKET}
+      echo "Backup bucket exists. Renaming..."
+      TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+      NEW_BUCKET_NAME="${_BACKUP_BUCKET}-ARCHIVE-${TIMESTAMP}"
+      gsutil mv gs://${_BACKUP_BUCKET} gs://${NEW_BUCKET_NAME}
+      echo "Renamed existing bucket to ${NEW_BUCKET_NAME}"
     else
       echo "Backup bucket does not exist."
     fi
-    echo "Creating backup bucket..."
+    echo "Creating new backup bucket..."
     gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
+    echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
 
 # Step 5: Create MongoDB backup service
 - name: 'gcr.io/cloud-builders/gcloud'
