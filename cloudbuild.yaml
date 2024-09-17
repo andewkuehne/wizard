@@ -1,5 +1,29 @@
 steps:
-# Step 1: Check, delete if exists, and recreate MongoDB VM
+# Step 1: Check, rename if exists, and create Backup Bucket
+- name: 'gcr.io/cloud-builders/gsutil'
+  id: 'manage-backup-bucket'
+  waitFor: ['-']  # This allows it to start immediately
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
+      echo "Backup bucket exists. Archiving..."
+      if ! gsutil ls -b gs://${_BACKUP_BUCKET}-OLD &>/dev/null; then
+        gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}-OLD
+      fi
+      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${_BACKUP_BUCKET}-OLD
+      gsutil rm -r gs://${_BACKUP_BUCKET}
+      echo "Bucket Archived"
+    else
+      echo "Backup bucket does not exist."
+    fi
+    echo "Creating new backup bucket..."
+    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
+    echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
+    
+# Step 2: Check, delete if exists, and recreate MongoDB VM
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'manage-mongodb-vm'
   entrypoint: 'bash'
@@ -24,7 +48,7 @@ steps:
     --machine-type ${_MACHINE_TYPE} \
     --zone ${_ZONE}
 
-# Step 2: Install MongoDB 
+# Step 3: Install MongoDB 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'install-mongodb'
   entrypoint: 'bash'
@@ -47,7 +71,7 @@ steps:
     sudo systemctl status mongod
     "
 
-# Step 3: Setup MongoDB Auth 
+# Step 4: Setup MongoDB Auth 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'setup-mongodb-auth'
   entrypoint: 'bash'
@@ -60,30 +84,6 @@ steps:
     sudo sed -i 's/#security:/security:\\n  authorization: enabled/' /etc/mongod.conf && \
     sudo systemctl restart mongod
     "
-
-# Step 4: Check, rename if exists, and create Backup Bucket
-- name: 'gcr.io/cloud-builders/gsutil'
-  id: 'manage-backup-bucket'
-  waitFor: ['-']  # This allows it to start immediately
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    set -e
-    if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
-      echo "Backup bucket exists. Archiving..."
-      if ! gsutil ls -b gs://${_BACKUP_BUCKET}-ARCHIVE &>/dev/null; then
-        gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}-ARCHIVE
-      fi
-      gsutil -m rsync -r gs://${_BACKUP_BUCKET} gs://${_BACKUP_BUCKET}-ARCHIVE
-      gsutil rm -r gs://${_BACKUP_BUCKET}
-      echo "Bucket Archived"
-    else
-      echo "Backup bucket does not exist."
-    fi
-    echo "Creating new backup bucket..."
-    gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
-    echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
     
 # Step 5: Create MongoDB backup service
 - name: 'gcr.io/cloud-builders/gcloud'
