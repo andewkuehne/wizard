@@ -64,6 +64,7 @@ steps:
 # Step 4: Check, rename if exists, and create Backup Bucket
 - name: 'gcr.io/cloud-builders/gsutil'
   id: 'manage-backup-bucket'
+  waitFor: ['-']  # This allows it to start immediately
   entrypoint: 'bash'
   args:
   - '-c'
@@ -83,7 +84,7 @@ steps:
     echo "Creating new backup bucket..."
     gsutil mb -p ${PROJECT_ID} gs://${_BACKUP_BUCKET}
     echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
-
+    
 # Step 5: Create MongoDB backup service
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'setup-mongodb-backup'
