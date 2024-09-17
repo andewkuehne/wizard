@@ -259,12 +259,8 @@ steps:
     if gcloud compute firewall-rules describe allow-gke-to-mongodb &>/dev/null; then
       echo "Firewall rule 'allow-gke-to-mongodb' exists. Updating..."
       gcloud compute firewall-rules update allow-gke-to-mongodb \
-        --direction=INGRESS \
-        --priority=1000 \
-        --network=$(gcloud compute instances describe mongodb-vm --zone=${_ZONE} --format='value(networkInterfaces[0].network.basename())') \
-        --action=ALLOW \
-        --rules=tcp:27017 \
-        --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)')
+        --source-ranges=$(gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --format='value(clusterIpv4Cidr)') \
+        --rules=tcp:27017
     else
       echo "Creating firewall rule 'allow-gke-to-mongodb'..."
       gcloud compute firewall-rules create allow-gke-to-mongodb \
