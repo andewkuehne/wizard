@@ -160,7 +160,6 @@ steps:
     
     echo "Cluster is ready for deployments."
 
-
 # Step 7: Modify the MongoDB configuration to allow connections from the GKE cluster
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'configure-mongodb'
