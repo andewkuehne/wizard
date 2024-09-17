@@ -100,7 +100,7 @@ spec:
     spec:
       containers:
       - name: tasky
-        image: gcr.io/${PROJECT_ID}/tasky-app:v1
+        image: gcr.io/PROJECT_ID_PLACEHOLDER/tasky-app:v1
         ports:
         - containerPort: 8080
         env:
