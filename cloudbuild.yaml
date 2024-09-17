@@ -33,7 +33,7 @@ steps:
     --image-project ubuntu-os-cloud \
     --machine-type ${_MACHINE_TYPE} \
     --zone ${_ZONE} \
-    --service-account=${VM_SERVICE_ACCOUNT} \
+    --service-account=$VM_SERVICE_ACCOUNT \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write
     
 # Step 2: Check, archive, and create Backup Bucket
@@ -62,7 +62,7 @@ steps:
     echo "New backup bucket created: gs://${_BACKUP_BUCKET}"
     
     echo "Setting permissions for the VM to access the bucket..."
-    gsutil iam ch serviceAccount:${VM_SERVICE_ACCOUNT}:objectAdmin gs://${_BACKUP_BUCKET}
+    gsutil iam ch serviceAccount:$VM_SERVICE_ACCOUNT:objectAdmin gs://${_BACKUP_BUCKET}
     echo "Bucket permissions set for VM access."
     
     echo "Verifying bucket permissions:"
