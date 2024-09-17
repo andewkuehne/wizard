@@ -7,7 +7,6 @@ steps:
   - '-c'
   - |
     set -e
-    source /workspace/build.env
     if gcloud compute instances describe mongodb-vm --zone=${_ZONE} &>/dev/null; then
       echo "MongoDB VM exists. Deleting..."
       gcloud compute instances delete mongodb-vm --zone=${_ZONE} --quiet
@@ -34,9 +33,7 @@ steps:
   args:
   - '-c'
   - |
-    set -e
-    source /workspace/build.env
-    
+    set -e    
     if gsutil ls -b gs://${_BACKUP_BUCKET} &>/dev/null; then
       echo "Backup bucket exists. Archiving..."
       if ! gsutil ls -b gs://${PROJECT_ID}-archive &>/dev/null; then
