@@ -123,7 +123,7 @@ steps:
     "
   secretEnv: ['MONGODB_PASSWORD']
 
-# Step 6: Check, delete if exists, and recreate GKE Cluster
+# Step 6: Mangage GKE Cluster
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'manage-gke-cluster'
   entrypoint: 'bash'
@@ -132,25 +132,33 @@ steps:
   - |
     set -e
     if gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} &>/dev/null; then
-      echo "GKE cluster exists. Deleting..."
-      gcloud container clusters delete ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} --quiet
-      echo "Waiting for cluster deletion..."
-      while gcloud container clusters describe ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID} &>/dev/null; do
-        sleep 5
-      done
+      echo "GKE cluster ${_CLUSTER_NAME} exists. Connecting and cleaning up previous deployments..."
+      gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID}
+      
+      # Clean up previous deployments
+      kubectl delete deployment --all
+      kubectl delete service --all
+      kubectl delete ingress --all
+      kubectl delete configmap --all
+      
+      # Only delete secrets that are not needed. Be careful with this!
+      # kubectl delete secret --all
+      
+      echo "Previous deployments cleaned up."
     else
-      echo "GKE cluster does not exist."
+      echo "GKE cluster does not exist. Creating..."
+      gcloud container clusters create ${_CLUSTER_NAME} \
+        --num-nodes=${_NODE_COUNT} \
+        --zone=${_ZONE} \
+        --project=${PROJECT_ID}
+      
+      echo "New GKE cluster created."
     fi
-    echo "Creating GKE cluster..."
-    gcloud container clusters create ${_CLUSTER_NAME} \
-      --num-nodes=${_NODE_COUNT} \
-      --zone=${_ZONE} \
-      --project=${PROJECT_ID}
     
-    # Set kubectl context
-    gcloud container clusters get-credentials ${_CLUSTER_NAME} \
-      --zone=${_ZONE} \
-      --project=${PROJECT_ID}
+    # Ensure we have the correct kubectl context
+    gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone=${_ZONE} --project=${PROJECT_ID}
+    
+    echo "Cluster is ready for deployments."
 
 
 # Step 7: Modify the MongoDB configuration to allow connections from the GKE cluster
