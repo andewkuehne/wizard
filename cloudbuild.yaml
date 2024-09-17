@@ -149,7 +149,6 @@ steps:
       kubectl delete ingress --all
       kubectl delete configmap --all
       
-      # Only delete secrets that are not needed. Be careful with this!
       # kubectl delete secret --all
       
       echo "Previous deployments cleaned up."
@@ -219,11 +218,7 @@ steps:
 # Step 13: Verify the image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'verify-image'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    gcloud container images list-tags gcr.io/${PROJECT_ID}/tasky-app
+  args: ['container', 'images', 'list-tags', 'gcr.io/${PROJECT_ID}/tasky-app']
 
 # Step 14: Create Kubernetes secrets
 - name: 'gcr.io/cloud-builders/kubectl'
@@ -321,12 +316,7 @@ steps:
 # Step 18: Verfiy image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'check-image-availability'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - |
-    echo "Verifying image in Container Registry:"
-    gcloud container images describe gcr.io/${PROJECT_ID}/tasky-app:v1
+  args: ['container', 'images', 'describe', 'gcr.io/${PROJECT_ID}/tasky-app:v1']
 
 # Step 19: Check Tasky pod logs
 - name: 'gcr.io/cloud-builders/kubectl'
